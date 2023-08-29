@@ -53,6 +53,13 @@ const COLORS: [RGB; 10] = [
     BLACK, BROWN, RED, ORANGE, YELLOW, GREEN, BLUE, VIOLET, GRAY, WHITE,
 ];
 
+// Sprites
+#[link_section = ".progmem.data"]
+static Ohm: [u8; 7] = [
+    5, 7, // width, height,
+    0x5e, 0x71, 0x01, 0x71, 0x5e,
+];
+
 //Initialize variables used in this game
 static mut bands: u8 = 4;
 
@@ -108,8 +115,10 @@ pub unsafe extern "C" fn loop_() {
     arduboy.set_cursor(0, 0);
 
     for place in (0..bands).rev() {
-    arduboy.print(resistance.get_digit(place));
+        arduboy.print(resistance.get_digit(place));
     }
+
+    sprites::draw_override(CHAR_WIDTH * bands as i16, 0, get_sprite_addr!(Ohm), 0);
 
     arduboy.draw_fast_hline(
         pointer as i16 * CHAR_WIDTH,
@@ -121,9 +130,6 @@ pub unsafe extern "C" fn loop_() {
     let i: usize = (resistance.get_digit(get_place())) as usize;
 
     write_led(&COLORS[i]);
-
-    arduboy.set_cursor(0, (HEIGHT/2).into());
-    arduboy.print(pointer as i16);
 
     arduboy.display();
 }
