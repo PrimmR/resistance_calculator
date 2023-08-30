@@ -15,37 +15,82 @@ const CHAR_HEIGHT: i16 = 8;
 const TOLERANCES: [f32; 10] = [0.01, 0.1, 0.25, 0.5, 0.02, 0.05, 1.0, 2.0, 5.0, 10.0];
 const TCRs: [u16; 9] = [1, 5, 10, 20, 25, 15, 50, 100, 250];
 
+enum ValType {
+    digit,
+    multiplier,
+    tolerance,
+    tcr,
+}
+
+struct Value {
+    value: c_char,
+    show: bool,
+    vtype: ValType,
+}
+
+impl Value {
+    fn change_by(&mut self, increment: i8) {
+        let (max_value, add) = match self.vtype {
+            ValType::digit => (10, 0),
+            ValType::multiplier => (13, 3),
+            ValType::tolerance => (10, 0),
+            ValType::tcr => (9, 0),
+        };
+        self.value = (self.value + increment + add).rem_euclid(max_value) - add;
+    }
+}
+
 struct Resistance {
-    value1: c_char,
-    value10: c_char,
-    value100: c_char,
-    multiplier_pow: c_char,
-    tolerance_index: c_char,
-    tcr_index: c_char,
+    value1: Value,
+    value10: Value,
+    value100: Value,
+    multiplier_pow: Value,
+    tolerance_index: Value,
+    tcr_index: Value,
     bands: u8,
 }
 
 impl Resistance {
     const fn new(bands: u8) -> Self {
-        Resistance{    
-            value1: 0,
-            value10: 0,
-            value100: 0,
-            multiplier_pow: 0,
-            tolerance_index: 0,
-            tcr_index: 0,
+        Resistance {
+            value1: Value {
+                value: 0,
+                show: true,
+                vtype: ValType::digit,
+            },
+            value10: Value {
+                value: 0,
+                show: true,
+                vtype: ValType::digit,
+            },
+            value100: Value {
+                value: 0,
+                show: true,
+                vtype: ValType::digit,
+            },
+            multiplier_pow: Value {
+                value: 0,
+                show: true,
+                vtype: ValType::multiplier,
+            },
+            tolerance_index: Value {
+                value: 0,
+                show: true,
+                vtype: ValType::tolerance,
+            },
+            tcr_index: Value {
+                value: 0,
+                show: true,
+                vtype: ValType::tcr,
+            },
             bands,
         }
-    }
-
-    fn change_by(&mut self, place: u8, increment: i8) {
-        self[place] = (self[place] + increment).rem_euclid(10);
     }
 }
 
 impl Index<u8> for Resistance {
-    type Output = c_char;
-    fn index(&self, i: u8) -> &c_char {
+    type Output = Value;
+    fn index(&self, i: u8) -> &Value {
         match self.bands {
             3 => match i {
                 0 => &self.value1,
@@ -83,7 +128,7 @@ impl Index<u8> for Resistance {
 }
 
 impl IndexMut<u8> for Resistance {
-    fn index_mut(&mut self, i: u8) -> &mut c_char {
+    fn index_mut(&mut self, i: u8) -> &mut Value {
         match self.bands {
             3 => match i {
                 0 => &mut self.value1,
@@ -191,20 +236,25 @@ pub unsafe extern "C" fn loop_() {
         }
     }
     if UP.just_pressed() {
-        resistance.change_by(pointer, 1);
+        resistance[pointer].change_by(1);
     }
     if DOWN.just_pressed() {
-        resistance.change_by(pointer, -1);
+        resistance[pointer].change_by(-1);
     }
 
     arduboy.set_cursor(0, 0);
 
     for place in (0..resistance.bands) {
         // arduboy.print(resistance.get_digit(place) as i16);
-        arduboy.print(resistance[place] as i16);
+        arduboy.print(resistance[place].value as i16);
     }
 
-    sprites::draw_override(CHAR_WIDTH * resistance.bands as i16, 0, get_sprite_addr!(Ohm), 0);
+    sprites::draw_override(
+        CHAR_WIDTH * resistance.bands as i16,
+        0,
+        get_sprite_addr!(Ohm),
+        0,
+    );
 
     arduboy.draw_fast_hline(
         pointer as i16 * CHAR_WIDTH,
@@ -213,9 +263,10 @@ pub unsafe extern "C" fn loop_() {
         Color::White,
     );
 
-    let i = resistance[pointer] as usize;
-
-    write_led(&COLORS[i]);
+    if let ValType::digit = resistance[pointer].vtype {
+        let i = resistance[pointer].value as usize;
+        write_led(&COLORS[i]);
+    }
 
     arduboy.display();
 }
