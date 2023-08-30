@@ -2,6 +2,7 @@
 #![allow(non_upper_case_globals)]
 
 use core::i16;
+use core::ops::{Index, IndexMut};
 
 //Include the Arduboy Library
 //Initialize the arduboy object
@@ -11,24 +12,111 @@ const arduboy: Arduboy2 = Arduboy2::new();
 const CHAR_WIDTH: i16 = 6;
 const CHAR_HEIGHT: i16 = 8;
 
+const TOLERANCES: [f32; 10] = [0.01, 0.1, 0.25, 0.5, 0.02, 0.05, 1.0, 2.0, 5.0, 10.0];
+const TCRs: [u16; 9] = [1, 5, 10, 20, 25, 15, 50, 100, 250];
+
 struct Resistance {
-    resistance: c_int,
+    value1: c_char,
+    value10: c_char,
+    value100: c_char,
+    multiplier_pow: c_char,
+    tolerance_index: c_char,
+    tcr_index: c_char,
+    bands: u8,
 }
 
 impl Resistance {
-    fn get_digit(&self, place: u8) -> i16 {
-        let power = 10_i16.pow(place.into());
-        self.resistance / power % 10
+    const fn new(bands: u8) -> Self {
+        Resistance{    
+            value1: 0,
+            value10: 0,
+            value100: 0,
+            multiplier_pow: 0,
+            tolerance_index: 0,
+            tcr_index: 0,
+            bands,
+        }
     }
 
-    fn increase(&mut self, place: u8) {
-        let place_digit = self.get_digit(place);
-        self.resistance += if place_digit != 9 { 1 } else { -9 } * 10_i16.pow(place.into());
+    fn change_by(&mut self, place: u8, increment: i8) {
+        self[place] = (self[place] + increment).rem_euclid(10);
     }
+}
 
-    fn decrease(&mut self, place: u8) {
-        let place_digit = self.get_digit(place);
-        self.resistance -= if place_digit != 0 { 1 } else { -9 } * 10_i16.pow(place.into());
+impl Index<u8> for Resistance {
+    type Output = c_char;
+    fn index(&self, i: u8) -> &c_char {
+        match self.bands {
+            3 => match i {
+                0 => &self.value1,
+                1 => &self.value10,
+                2 => &self.multiplier_pow,
+                _ => panic!("unknown field: {}", i),
+            },
+            4 => match i {
+                0 => &self.value1,
+                1 => &self.value10,
+                2 => &self.multiplier_pow,
+                3 => &self.tolerance_index,
+                _ => panic!("unknown field: {}", i),
+            },
+            5 => match i {
+                0 => &self.value1,
+                1 => &self.value10,
+                2 => &self.value100,
+                3 => &self.multiplier_pow,
+                4 => &self.tolerance_index,
+                _ => panic!("unknown field: {}", i),
+            },
+            6 => match i {
+                0 => &self.value1,
+                1 => &self.value10,
+                2 => &self.value100,
+                3 => &self.multiplier_pow,
+                4 => &self.tolerance_index,
+                5 => &self.tcr_index,
+                _ => panic!("unknown field: {}", i),
+            },
+            _ => panic!("bad band num: {}", i),
+        }
+    }
+}
+
+impl IndexMut<u8> for Resistance {
+    fn index_mut(&mut self, i: u8) -> &mut c_char {
+        match self.bands {
+            3 => match i {
+                0 => &mut self.value1,
+                1 => &mut self.value10,
+                2 => &mut self.multiplier_pow,
+                _ => panic!("unknown field: {}", i),
+            },
+            4 => match i {
+                0 => &mut self.value1,
+                1 => &mut self.value10,
+                2 => &mut self.multiplier_pow,
+                3 => &mut self.tolerance_index,
+                _ => panic!("unknown field: {}", i),
+            },
+            5 => match i {
+                0 => &mut self.value1,
+                1 => &mut self.value10,
+                2 => &mut self.value100,
+                3 => &mut self.multiplier_pow,
+                4 => &mut self.tolerance_index,
+                _ => panic!("unknown field: {}", i),
+            },
+            6 => match i {
+                0 => &mut self.value1,
+                1 => &mut self.value10,
+                2 => &mut self.value100,
+                3 => &mut self.multiplier_pow,
+                4 => &mut self.tolerance_index,
+                5 => &mut self.tcr_index,
+                _ => panic!("unknown field: {}", i),
+            },
+            _ => panic!("bad band num: {}", i),
+        }
     }
 }
 
@@ -61,10 +149,8 @@ static Ohm: [u8; 7] = [
 ];
 
 //Initialize variables used in this game
-static mut bands: u8 = 4;
-
 static mut pointer: u8 = 0;
-static mut resistance: Resistance = Resistance { resistance: 1234 };
+static mut resistance: Resistance = Resistance::new(6);
 
 //The setup() function runs once when you turn your Arduboy on
 #[no_mangle]
@@ -87,13 +173,12 @@ pub unsafe extern "C" fn loop_() {
     arduboy.clear();
     arduboy.poll_buttons();
 
-    // let messagestr = "Hais from Rust\0";
-
-    // arduboy.set_cursor(
-    //     (WIDTH as i16 - messagestr.len() as i16 * CHAR_WIDTH) / 2,
-    //     (HEIGHT as i16 - CHAR_HEIGHT) / 2,
-    // );
-    // arduboy.print(messagestr);
+    if A.just_pressed() {
+        resistance = Resistance::new(resistance.bands + 1)
+    }
+    if B.just_pressed() {
+        resistance = Resistance::new(resistance.bands - 1)
+    }
 
     if LEFT.just_pressed() {
         if pointer > 0 {
@@ -101,24 +186,25 @@ pub unsafe extern "C" fn loop_() {
         }
     }
     if RIGHT.just_pressed() {
-        if pointer < bands - 1 {
+        if pointer < resistance.bands - 1 {
             pointer += 1;
         }
     }
     if UP.just_pressed() {
-        resistance.increase(get_place());
+        resistance.change_by(pointer, 1);
     }
     if DOWN.just_pressed() {
-        resistance.decrease(get_place())
+        resistance.change_by(pointer, -1);
     }
 
     arduboy.set_cursor(0, 0);
 
-    for place in (0..bands).rev() {
-        arduboy.print(resistance.get_digit(place));
+    for place in (0..resistance.bands) {
+        // arduboy.print(resistance.get_digit(place) as i16);
+        arduboy.print(resistance[place] as i16);
     }
 
-    sprites::draw_override(CHAR_WIDTH * bands as i16, 0, get_sprite_addr!(Ohm), 0);
+    sprites::draw_override(CHAR_WIDTH * resistance.bands as i16, 0, get_sprite_addr!(Ohm), 0);
 
     arduboy.draw_fast_hline(
         pointer as i16 * CHAR_WIDTH,
@@ -127,13 +213,9 @@ pub unsafe extern "C" fn loop_() {
         Color::White,
     );
 
-    let i: usize = (resistance.get_digit(get_place())) as usize;
+    let i = resistance[pointer] as usize;
 
     write_led(&COLORS[i]);
 
     arduboy.display();
-}
-
-unsafe fn get_place() -> u8 {
-    bands - 1 - pointer
 }
