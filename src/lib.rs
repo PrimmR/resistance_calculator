@@ -2,7 +2,6 @@
 #![allow(non_upper_case_globals)]
 
 use core::i16;
-use core::ops::{Index, IndexMut};
 
 //Include the Arduboy Library
 //Initialize the arduboy object
@@ -12,90 +11,132 @@ const arduboy: Arduboy2 = Arduboy2::new();
 const CHAR_WIDTH: i16 = 6;
 const CHAR_HEIGHT: i16 = 8;
 
-const TOLERANCES: [f32; 10] = [0.01, 0.1, 0.25, 0.5, 0.02, 0.05, 1.0, 2.0, 5.0, 10.0];
-const TCRs: [u16; 9] = [1, 5, 10, 20, 25, 15, 50, 100, 250];
-
 enum ValType {
-    digit,
-    multiplier,
-    tolerance,
-    tcr,
+    Digit,
+    Multiplier,
+    Tolerance,
+    TCR,
 }
 
-struct Value {
+struct Band {
     value: c_char,
     show: bool,
     vtype: ValType,
+    x: i16,
+    y: i16,
 }
 
-impl Value {
+impl Band {
     fn change_by(&mut self, increment: i8) {
         let (max_value, add) = match self.vtype {
-            ValType::digit => (10, 0),
-            ValType::multiplier => (13, 3),
-            ValType::tolerance => (10, 0),
-            ValType::tcr => (9, 0),
+            ValType::Digit => (10, 0),
+            ValType::Multiplier => (13, 3),
+            ValType::Tolerance => (10, 0),
+            ValType::TCR => (9, 0),
         };
         self.value = (self.value + increment + add).rem_euclid(max_value) - add;
+    }
+
+    fn display(&self) {
+        if !self.show {
+            return;
+        }
+        arduboy.set_cursor(self.x, self.y);
+        match self.vtype {
+            ValType::Digit => arduboy.print(self.value as i16),
+            ValType::Multiplier => {
+                arduboy.print(f!(b"10^\0"));
+                arduboy.print(self.value as i16);
+            }
+            ValType::Tolerance => {
+                arduboy.print(TOLERANCES[self.value as usize]);
+                arduboy.print("%\0");
+            }
+            ValType::TCR => {
+                arduboy.print("+\0"); //±
+                arduboy.print(TCRs[self.value as usize]);
+            },
+        }
+    }
+    fn display_rgb(&self) {
+        match self.vtype {
+            ValType::Digit => write_led(&VALUE_COLORS[self.value as usize]),
+            ValType::Multiplier => write_led(&MULTIPLIER_COLORS[self.value as usize + 3]),
+            ValType::Tolerance => write_led(&TOLERANCE_COLORS[self.value as usize]),
+            ValType::TCR => write_led(&TCR_COLORS[self.value as usize]),
+        }
+    }
+
+    fn get_value(&self) -> c_char {
+        self.value
     }
 }
 
 struct Resistance {
-    value1: Value,
-    value10: Value,
-    value100: Value,
-    multiplier_pow: Value,
-    tolerance_index: Value,
-    tcr_index: Value,
+    value1: Band,
+    value10: Band,
+    value100: Band,
+    multiplier_pow: Band,
+    tolerance_index: Band,
+    tcr_index: Band,
     bands: u8,
 }
 
 impl Resistance {
     const fn new(bands: u8) -> Self {
         Resistance {
-            value1: Value {
+            value1: Band {
                 value: 0,
                 show: true,
-                vtype: ValType::digit,
+                vtype: ValType::Digit,
+                x: CHAR_WIDTH * 0,
+                y: CHAR_HEIGHT,
             },
-            value10: Value {
+            value10: Band {
                 value: 0,
                 show: true,
-                vtype: ValType::digit,
+                vtype: ValType::Digit,
+                x: CHAR_WIDTH * 1,
+                y: CHAR_HEIGHT,
             },
-            value100: Value {
+            value100: Band {
                 value: 0,
                 show: true,
-                vtype: ValType::digit,
+                vtype: ValType::Digit,
+                x: CHAR_WIDTH * 2,
+                y: CHAR_HEIGHT,
             },
-            multiplier_pow: Value {
+            multiplier_pow: Band {
                 value: 0,
                 show: true,
-                vtype: ValType::multiplier,
+                vtype: ValType::Multiplier,
+                x: CHAR_WIDTH * 4,
+                y: CHAR_HEIGHT,
             },
-            tolerance_index: Value {
+            tolerance_index: Band {
                 value: 0,
                 show: true,
-                vtype: ValType::tolerance,
+                vtype: ValType::Tolerance,
+                x: CHAR_WIDTH * 9,
+                y: CHAR_HEIGHT,
             },
-            tcr_index: Value {
+            tcr_index: Band {
                 value: 0,
                 show: true,
-                vtype: ValType::tcr,
+                vtype: ValType::TCR,
+                x: CHAR_WIDTH * 15,
+                y: CHAR_HEIGHT,
             },
             bands,
         }
     }
-}
 
-impl Index<u8> for Resistance {
-    type Output = Value;
-    fn index(&self, i: u8) -> &Value {
+    fn index(&self, i: u8) -> &Band {
         match self.bands {
             3 => match i {
-                0 => &self.value1,
-                1 => &self.value10,
-                2 => &self.multiplier_pow,
+                0 => return &self.value1,
+                1 => return &self.value10,
+                2 => return &self.multiplier_pow,
                 _ => panic!("unknown field: {}", i),
             },
             4 => match i {
@@ -125,10 +166,8 @@ impl Index<u8> for Resistance {
             _ => panic!("bad band num: {}", i),
         }
     }
-}
 
-impl IndexMut<u8> for Resistance {
-    fn index_mut(&mut self, i: u8) -> &mut Value {
+    fn index_mut(&mut self, i: u8) -> &mut Band {
         match self.bands {
             3 => match i {
                 0 => &mut self.value1,
@@ -171,7 +210,12 @@ fn write_led(color: &RGB) {
     arduboy.set_rgb_led(color.0, color.1, color.2)
 }
 
+// Colours & orders
+
+const PINK: RGB = RGB(255, 32, 128);
+const SILVER: RGB = RGB(40, 40, 40);
 const BLACK: RGB = RGB(0, 0, 0);
+const GOLD: RGB = RGB(192, 64, 0);
 const BROWN: RGB = RGB(192, 32, 8);
 const RED: RGB = RGB(255, 0, 0);
 const ORANGE: RGB = RGB(255, 40, 0);
@@ -182,9 +226,24 @@ const VIOLET: RGB = RGB(112, 0, 224);
 const GRAY: RGB = RGB(24, 24, 24);
 const WHITE: RGB = RGB(255, 255, 255);
 
-const COLORS: [RGB; 10] = [
+const VALUE_COLORS: [RGB; 10] = [
     BLACK, BROWN, RED, ORANGE, YELLOW, GREEN, BLUE, VIOLET, GRAY, WHITE,
 ];
+
+const MULTIPLIER_COLORS: [RGB; 13] = [
+    PINK, SILVER, GOLD, BLACK, BROWN, RED, ORANGE, YELLOW, GREEN, BLUE, VIOLET, GRAY, WHITE,
+];
+
+const TOLERANCE_COLORS: [RGB; 10] = [
+    GRAY, YELLOW, ORANGE, VIOLET, BLUE, GREEN, BROWN, RED, GOLD, SILVER,
+];
+
+const TCR_COLORS: [RGB; 9] = [GRAY, VIOLET, BLUE, ORANGE, GREEN, YELLOW, RED, BROWN, BLACK];
+
+const TOLERANCES: [&str; 10] = [
+    "0.01\0", "0.02\0", "0.05\0", "0.1\0", "0.25\0", "0.5\0", "1.0\0", "2.0\0", "5.0\0", "10.0\0",
+];
+const TCRs: [u16; 9] = [1, 5, 10, 15, 20, 25, 50, 100, 250];
 
 // Sprites
 #[link_section = ".progmem.data"]
@@ -236,37 +295,28 @@ pub unsafe extern "C" fn loop_() {
         }
     }
     if UP.just_pressed() {
-        resistance[pointer].change_by(1);
+        resistance.index_mut(pointer).change_by(1);
     }
     if DOWN.just_pressed() {
-        resistance[pointer].change_by(-1);
+        resistance.index_mut(pointer).change_by(-1);
     }
 
     arduboy.set_cursor(0, 0);
 
-    for place in (0..resistance.bands) {
-        // arduboy.print(resistance.get_digit(place) as i16);
-        arduboy.print(resistance[place].value as i16);
+    for place in 0..resistance.bands {
+        resistance.index(place).display();
     }
 
-    sprites::draw_override(
-        CHAR_WIDTH * resistance.bands as i16,
-        0,
-        get_sprite_addr!(Ohm),
-        0,
-    );
+    sprites::draw_override(CHAR_WIDTH * 19, CHAR_HEIGHT, get_sprite_addr!(Ohm), 0);
 
     arduboy.draw_fast_hline(
-        pointer as i16 * CHAR_WIDTH,
-        CHAR_HEIGHT + 1,
+        resistance.index(pointer).x,
+        CHAR_HEIGHT * 2 + 1,
         CHAR_WIDTH as u8,
         Color::White,
     );
 
-    if let ValType::digit = resistance[pointer].vtype {
-        let i = resistance[pointer].value as usize;
-        write_led(&COLORS[i]);
-    }
+    resistance.index(pointer).display_rgb();
 
     arduboy.display();
 }
