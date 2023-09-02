@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(non_upper_case_globals)]
+#![feature(const_fn_floating_point_arithmetic)]
 
 use core::i16;
 
@@ -41,22 +42,26 @@ struct Band {
 }
 
 impl Band {
-    const fn new(show: bool, vtype: ValType, x: i16, y: i16, bandx: i16) -> Self {
-        let width = match vtype {
-            ValType::Digit => 1,
-            ValType::Multiplier => 4,
-            ValType::Tolerance => 5,
-            ValType::TCR => 4,
-        };
+    const fn new(show: bool, vtype: ValType, x: i16, bandx: i16) -> Self {
+        let width = Band::get_width(&vtype);
 
         Band {
             value: 0,
             show,
             vtype,
             x,
-            y,
+            y: TEXT_Y,
             width,
             bandx,
+        }
+    }
+
+    const fn get_width(vtype: &ValType) -> u8 {
+        match vtype {
+            ValType::Digit => 1,
+            ValType::Multiplier => 4,
+            ValType::Tolerance => 5,
+            ValType::TCR => 4,
         }
     }
 
@@ -94,7 +99,6 @@ impl Band {
                     2 => arduboy.print(f!(b"00\0")),
                     _ => arduboy.print(f!(b"  \0")),
                 }
-                // arduboy.print(f!(b" \0"));
 
                 arduboy.print(PREFIXES[(round_down_to(self.value.into(), 3) / 3 + 1) as usize]);
                 sprites::draw_override(
@@ -124,7 +128,15 @@ impl Band {
 
         // Display band
         sprites::draw_override(self.bandx, BAND_Y, get_sprite_addr!(Band), self.get_rgb().3);
+        // Display abbreviation
+        sprites::draw_override(
+            self.bandx + (BAND_WIDTH - ABBR_WIDTH as i16) / 2,
+            (HEIGHT - ABBR_HEIGHT) as i16,
+            get_sprite_addr!(Abbreviations),
+            self.get_rgb().4,
+        )
     }
+
     fn display_rgb(&self) {
         write_led(self.get_rgb());
     }
@@ -152,49 +164,45 @@ struct Resistance {
 
 impl Resistance {
     const fn new(bands: u8) -> Self {
+        // Procedural Spacing
+        let tot_width = (if bands >= 5 {
+            TEXT_WIDTHS[0]
+        } else {
+            TEXT_WIDTHS[1]
+        } + if bands >= 4 { TEXT_WIDTHS[2] } else { 0 }
+            + if bands >= 6 { TEXT_WIDTHS[3] } else { 0 });
+        let spacing: f32 =
+            (WIDTH as i16 - tot_width) as f32 / (bands - if bands >= 5 { 2 } else { 1 }) as f32;
+
+        // Start with left spacing
+        let mut x: f32 = spacing;
+
+        let value1 = Band::new(true, ValType::Digit, x as i16, BAND_Xs[0]);
+        x += CHAR_WIDTH as f32;
+        let value10 = Band::new(true, ValType::Digit, x as i16, BAND_Xs[1]);
+        if bands >= 5 {
+            x += CHAR_WIDTH as f32;
+        }
+        let value100 = Band::new(bands >= 5, ValType::Digit, x as i16, BAND_Xs[2]);
+        x += CHAR_WIDTH as f32;
+        let multiplier_pow = Band::new(true, ValType::Multiplier, x as i16, BAND_Xs[3]);
+        if bands >= 4 {
+            x += (CHAR_WIDTH * Band::get_width(&ValType::Multiplier) as i16) as f32 + spacing;
+        }
+        let tolerance_index = Band::new(bands >= 4, ValType::Tolerance, x as i16, BAND_Xs[4]);
+
+        if bands >= 6 {
+            x += (CHAR_WIDTH * Band::get_width(&ValType::Tolerance) as i16) as f32 + spacing;
+        }
+        let tcr_index = Band::new(bands >= 6, ValType::TCR, x as i16, BAND_Xs[5]);
+
         Resistance {
-            value1: Band::new(
-                true,
-                ValType::Digit,
-                CHAR_WIDTH * 0,
-                CHAR_HEIGHT,
-                BAND_Xs[0],
-            ),
-            value10: Band::new(
-                true,
-                ValType::Digit,
-                CHAR_WIDTH * 1,
-                CHAR_HEIGHT,
-                BAND_Xs[1],
-            ),
-            value100: Band::new(
-                bands >= 5,
-                ValType::Digit,
-                CHAR_WIDTH * 2,
-                CHAR_HEIGHT,
-                BAND_Xs[2],
-            ),
-            multiplier_pow: Band::new(
-                true,
-                ValType::Multiplier,
-                CHAR_WIDTH * 3,
-                CHAR_HEIGHT,
-                BAND_Xs[3],
-            ),
-            tolerance_index: Band::new(
-                bands >= 4,
-                ValType::Tolerance,
-                CHAR_WIDTH * 8,
-                CHAR_HEIGHT,
-                BAND_Xs[4],
-            ),
-            tcr_index: Band::new(
-                bands >= 6,
-                ValType::TCR,
-                CHAR_WIDTH * 14,
-                CHAR_HEIGHT,
-                BAND_Xs[5],
-            ),
+            value1,
+            value10,
+            value100,
+            multiplier_pow,
+            tolerance_index,
+            tcr_index,
 
             bands,
         }
@@ -283,7 +291,7 @@ impl Resistance {
     }
 }
 
-struct RGB(u8, u8, u8, u8);
+struct RGB(u8, u8, u8, u8, u8);
 
 fn write_led(color: &RGB) {
     arduboy.set_rgb_led(color.0, color.1, color.2)
@@ -291,19 +299,19 @@ fn write_led(color: &RGB) {
 
 // Colours & orders
 
-const PINK: RGB = RGB(255, 32, 128, Patterns::Vibrant as u8);
-const SILVER: RGB = RGB(40, 40, 40, Patterns::ShinyRev as u8);
-const BLACK: RGB = RGB(0, 0, 0, Patterns::Black as u8);
-const GOLD: RGB = RGB(192, 64, 0, Patterns::Shiny as u8);
-const BROWN: RGB = RGB(192, 32, 8, Patterns::Dull as u8);
-const RED: RGB = RGB(255, 0, 0, Patterns::Squared as u8);
-const ORANGE: RGB = RGB(255, 40, 0, Patterns::Striped as u8);
-const YELLOW: RGB = RGB(255, 128, 0, Patterns::Strips as u8);
-const GREEN: RGB = RGB(0, 255, 0, Patterns::Orbs as u8);
-const BLUE: RGB = RGB(0, 0, 192, Patterns::Snow as u8);
-const VIOLET: RGB = RGB(112, 0, 224, Patterns::Wavy as u8);
-const GRAY: RGB = RGB(24, 24, 24, Patterns::Gray as u8);
-const WHITE: RGB = RGB(255, 255, 255, Patterns::White as u8);
+const PINK: RGB = RGB(255, 32, 128, Patterns::Vibrant as u8, 0);
+const SILVER: RGB = RGB(40, 40, 40, Patterns::ShinyRev as u8, 1);
+const GOLD: RGB = RGB(192, 64, 0, Patterns::Shiny as u8, 2);
+const BLACK: RGB = RGB(0, 0, 0, Patterns::Black as u8, 3);
+const BROWN: RGB = RGB(192, 32, 8, Patterns::Dull as u8, 4);
+const RED: RGB = RGB(255, 0, 0, Patterns::Squared as u8, 5);
+const ORANGE: RGB = RGB(255, 40, 0, Patterns::Striped as u8, 6);
+const YELLOW: RGB = RGB(255, 128, 0, Patterns::Strips as u8, 7);
+const GREEN: RGB = RGB(0, 255, 0, Patterns::Orbs as u8, 8);
+const BLUE: RGB = RGB(0, 0, 192, Patterns::Snow as u8, 9);
+const VIOLET: RGB = RGB(112, 0, 224, Patterns::Wavy as u8, 10);
+const GRAY: RGB = RGB(24, 24, 24, Patterns::Gray as u8, 11);
+const WHITE: RGB = RGB(255, 255, 255, Patterns::White as u8, 12);
 
 const VALUE_COLORS: [RGB; 10] = [
     BLACK, BROWN, RED, ORANGE, YELLOW, GREEN, BLUE, VIOLET, GRAY, WHITE,
@@ -341,6 +349,22 @@ static Plus_Minus: [u8; 7] = [
     5, 7, // width, height,
     0x44, 0x44, 0x5f, 0x44, 0x44,
 ];
+
+const VALUES3_WIDTH: i16 = 7 * CHAR_WIDTH;
+const VALUES2_WIDTH: i16 = 6 * CHAR_WIDTH;
+const TOLERANCE_WIDTH: i16 = 5 * CHAR_WIDTH;
+const TCR_WIDTH: i16 = 7 * CHAR_WIDTH;
+
+// const TEXT_X: [[i16; 3]; 4] = [
+//     [CHAR_WIDTH * 2, 0, 0],
+//     [CHAR_WIDTH * 2, CHAR_WIDTH * 10, 0],
+//     [CHAR_WIDTH * 2, CHAR_WIDTH * 10, 0],
+//     [CHAR_WIDTH * 0, CHAR_WIDTH * 8, CHAR_WIDTH * 14],
+// ];
+
+const TEXT_WIDTHS: [i16; 4] = [VALUES3_WIDTH, VALUES2_WIDTH, TOLERANCE_WIDTH, TCR_WIDTH];
+
+const TEXT_Y: i16 = 10;
 
 const RES_Y: i16 = 24;
 const RES_HEIGHT: u8 = 32;
@@ -416,6 +440,28 @@ static ResMask: [u8; 512] = [
     0xe0, 0xc0, 0xc0, 0xc0, 0xc0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0xc0, 0xc0, 0xc0, 0xc0,
     0xe0, 0xe0, 0xf0, 0xf0, 0xf8, 0xfc, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+];
+
+const ABBR_WIDTH: u8 = 7;
+const ABBR_HEIGHT: u8 = 5;
+
+#[link_section = ".progmem.data"]
+static Abbreviations: [u8; 93] = [
+    7, 5, // width, height,
+    // PINK
+    0x1f, 0x05, 0x07, 0x00, 0x1f, 0x04, 0x1b, // SILVER
+    0x17, 0x15, 0x1d, 0x00, 0x1f, 0x05, 0x1a, // GOLD
+    0x1f, 0x11, 0x19, 0x00, 0x1f, 0x11, 0x1e, // BLACK
+    0x1f, 0x15, 0x1a, 0x00, 0x1f, 0x04, 0x1b, // BROWN
+    0x1f, 0x15, 0x1a, 0x00, 0x1f, 0x01, 0x1f, // RED
+    0x1f, 0x05, 0x1a, 0x00, 0x1f, 0x11, 0x1e, // ORANGE
+    0x1f, 0x11, 0x1f, 0x00, 0x1f, 0x11, 0x19, // YELLOW
+    0x07, 0x1c, 0x07, 0x00, 0x1f, 0x15, 0x15, // GREEN
+    0x1f, 0x11, 0x19, 0x00, 0x1f, 0x01, 0x1f, // BLUE
+    0x1f, 0x15, 0x1a, 0x00, 0x1f, 0x10, 0x1f, // VIOLET
+    0x0f, 0x10, 0x0f, 0x00, 0x01, 0x1f, 0x01, // GRAY
+    0x1f, 0x11, 0x19, 0x00, 0x07, 0x1c, 0x07, // WHITE
+    0x1f, 0x08, 0x1f, 0x00, 0x1f, 0x04, 0x1f,
 ];
 
 const BAND_Y: i16 = RES_Y;
@@ -504,17 +550,21 @@ pub unsafe extern "C" fn loop_() {
         }
     }
     if B.just_pressed() {
-        if resistance.bands > MIN_BANDS {
-            if resistance.bands == 5 && pointer > 1 {
-                pointer -= 1;
-            }
+        // Stick the pointer to currently selected band
+        if resistance.bands == 4 && pointer > 1 {
+            pointer += 1;
+        }
 
-            resistance = Resistance::new(resistance.bands - 1);
+        // Increment, looping at 6 back to 3
+        if resistance.bands < MAX_BANDS {
+            resistance = Resistance::new(resistance.bands + 1);
+        } else {
+            resistance = Resistance::new(MIN_BANDS);
+        }
 
-            // Prevent invalid index call
-            if pointer > resistance.bands - 1 {
-                pointer = resistance.bands - 1;
-            }
+        // Prevent invalid index call
+        if pointer > resistance.bands - 1 {
+            pointer = resistance.bands - 1;
         }
     }
 
@@ -538,13 +588,13 @@ pub unsafe extern "C" fn loop_() {
     arduboy.set_cursor(0, 0);
 
     arduboy.draw_fast_vline(
-        BAND_Xs[pointer as usize] - 1,
+        resistance.index(pointer).bandx - 1,
         RES_Y,
         RES_HEIGHT,
         Color::White,
     );
     arduboy.draw_fast_vline(
-        BAND_Xs[pointer as usize] + BAND_WIDTH,
+        resistance.index(pointer).bandx + BAND_WIDTH,
         RES_Y,
         RES_HEIGHT,
         Color::White,
@@ -560,9 +610,9 @@ pub unsafe extern "C" fn loop_() {
     );
 
     arduboy.draw_fast_hline(
-        resistance.index(pointer).x,
-        CHAR_HEIGHT * 2 + 1,
-        resistance.index(pointer).width * CHAR_WIDTH as u8,
+        resistance.index(pointer).x - 1,
+        CHAR_HEIGHT * 2 + 2,
+        resistance.index(pointer).width * CHAR_WIDTH as u8 + 1,
         Color::White,
     );
 
