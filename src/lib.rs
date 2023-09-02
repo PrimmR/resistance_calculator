@@ -83,6 +83,22 @@ impl Band {
         }
     }
 
+    fn change_to(&mut self, new: i8) {
+        if let ValType::Multiplier = self.vtype {
+            self.value = new - 3
+        } else {
+            self.value = new
+        }
+    }
+
+    fn get_pointer(&self) -> i8 {
+        if let ValType::Multiplier = self.vtype {
+            self.value + 3
+        } else {
+            self.value
+        }
+    }
+
     fn display(&self) {
         if !self.show {
             return;
@@ -142,11 +158,20 @@ impl Band {
     }
 
     fn get_rgb(&self) -> &RGB {
-        match self.vtype {
-            ValType::Digit => &VALUE_COLORS[self.value as usize],
-            ValType::Multiplier => &MULTIPLIER_COLORS[self.value as usize + 3],
-            ValType::Tolerance => &TOLERANCE_COLORS[self.value as usize],
-            ValType::TCR => &TCR_COLORS[self.value as usize],
+        let arr = Band::rgb_arr_from_valtype(&self.vtype);
+        if let ValType::Multiplier = self.vtype {
+            &arr[self.value as usize + 3]
+        } else {
+            &arr[self.value as usize]
+        }
+    }
+
+    fn rgb_arr_from_valtype(vtype: &ValType) -> &[RGB] {
+        match vtype {
+            ValType::Digit => &VALUE_COLORS,
+            ValType::Multiplier => &MULTIPLIER_COLORS,
+            ValType::Tolerance => &TOLERANCE_COLORS,
+            ValType::TCR => &TCR_COLORS,
         }
     }
 }
@@ -297,6 +322,60 @@ fn write_led(color: &RGB) {
     arduboy.set_rgb_led(color.0, color.1, color.2)
 }
 
+fn draw_menu(band_type: &ValType, menu_index: u8) {
+    arduboy.draw_rect(
+        ((WIDTH - MENU_SIZE - 2) / 2).into(),
+        ((HEIGHT - MENU_SIZE - 2) / 2).into(),
+        MENU_SIZE + 2,
+        MENU_SIZE + 2,
+        Color::White,
+    );
+    arduboy.fill_rect(
+        ((WIDTH - MENU_SIZE) / 2).into(),
+        ((HEIGHT - MENU_SIZE) / 2).into(),
+        MENU_SIZE,
+        MENU_SIZE,
+        Color::Black,
+    );
+
+    let arr_len = Band::rgb_arr_from_valtype(&band_type).len();
+
+    let mut count: i16 = 0;
+    let x = (WIDTH - ABBR_WIDTH) as i16 / 2 - MENU_GAP - ABBR_WIDTH as i16;
+    let y =
+        (HEIGHT as i16 - (arr_len as i16 + 2) / 3 * (ABBR_HEIGHT as i16 + MENU_GAP) + MENU_GAP) / 2;
+
+    for rgb in Band::rgb_arr_from_valtype(&band_type) {
+        let center_final = if count + 1 == arr_len as i16 && arr_len % 3 != 0 {
+            1
+        } else {
+            0
+        };
+
+        sprites::draw_override(
+            x + ((count % 3) + center_final) * (ABBR_WIDTH as i16 + MENU_GAP),
+            y + (count / 3) * (ABBR_HEIGHT as i16 + MENU_GAP),
+            get_sprite_addr!(Abbreviations),
+            rgb.4,
+        );
+
+        count += 1;
+    }
+
+    let center_final = if menu_index + 1 == arr_len as u8 && arr_len % 3 != 0 {
+        1
+    } else {
+        0
+    };
+
+    sprites::draw_override(
+        x + ((menu_index as i16 % 3) + center_final) * (ABBR_WIDTH as i16 + MENU_GAP) - 4,
+        y + (menu_index as i16 / 3) * (ABBR_HEIGHT as i16 + MENU_GAP),
+        get_sprite_addr!(Arrow),
+        0,
+    )
+}
+
 // Colours & orders
 
 const PINK: RGB = RGB(255, 32, 128, Patterns::Vibrant as u8, 0);
@@ -355,19 +434,15 @@ const VALUES2_WIDTH: i16 = 6 * CHAR_WIDTH;
 const TOLERANCE_WIDTH: i16 = 5 * CHAR_WIDTH;
 const TCR_WIDTH: i16 = 7 * CHAR_WIDTH;
 
-// const TEXT_X: [[i16; 3]; 4] = [
-//     [CHAR_WIDTH * 2, 0, 0],
-//     [CHAR_WIDTH * 2, CHAR_WIDTH * 10, 0],
-//     [CHAR_WIDTH * 2, CHAR_WIDTH * 10, 0],
-//     [CHAR_WIDTH * 0, CHAR_WIDTH * 8, CHAR_WIDTH * 14],
-// ];
-
 const TEXT_WIDTHS: [i16; 4] = [VALUES3_WIDTH, VALUES2_WIDTH, TOLERANCE_WIDTH, TCR_WIDTH];
 
 const TEXT_Y: i16 = 10;
 
 const RES_Y: i16 = 24;
 const RES_HEIGHT: u8 = 32;
+
+const MENU_SIZE: u8 = 56;
+const MENU_GAP: i16 = 6;
 
 #[link_section = ".progmem.data"]
 static Res: [u8; 514] = [
@@ -464,6 +539,12 @@ static Abbreviations: [u8; 93] = [
     0x1f, 0x08, 0x1f, 0x00, 0x1f, 0x04, 0x1f,
 ];
 
+#[link_section = ".progmem.data"]
+static Arrow: [u8; 5] = [
+    3, 5, // width, height,
+    0x1f, 0x0e, 0x04,
+];
+
 const BAND_Y: i16 = RES_Y;
 const BAND_Xs: [i16; 6] = [32, 44, 56, 69, 82, 94];
 const BAND_WIDTH: i16 = 6;
@@ -518,7 +599,9 @@ static Band: [u8; 314] = [
 
 //Initialize variables used in this game
 static mut pointer: u8 = 0;
+static mut menu_pointer: u8 = 0;
 static mut resistance: Resistance = Resistance::new(6);
+static mut show_menu: bool = false;
 
 //The setup() function runs once when you turn your Arduboy on
 #[no_mangle]
@@ -541,48 +624,90 @@ pub unsafe extern "C" fn loop_() {
     arduboy.clear();
     arduboy.poll_buttons();
 
-    if A.just_pressed() {
-        if resistance.bands < MAX_BANDS {
+    let current_rgb = Band::rgb_arr_from_valtype(&resistance.index(pointer).vtype);
+
+    if !show_menu {
+        if A.just_pressed() {
+            menu_pointer = resistance.index_mut(pointer).get_pointer() as u8;
+            show_menu = true;
+        }
+        if B.just_pressed() {
+            // Stick the pointer to currently selected band
             if resistance.bands == 4 && pointer > 1 {
                 pointer += 1;
             }
-            resistance = Resistance::new(resistance.bands + 1);
-        }
-    }
-    if B.just_pressed() {
-        // Stick the pointer to currently selected band
-        if resistance.bands == 4 && pointer > 1 {
-            pointer += 1;
+
+            // Increment, looping at 6 back to 3
+            if resistance.bands < MAX_BANDS {
+                resistance = Resistance::new(resistance.bands + 1);
+            } else {
+                resistance = Resistance::new(MIN_BANDS);
+            }
+
+            // Prevent invalid index call
+            if pointer > resistance.bands - 1 {
+                pointer = resistance.bands - 1;
+            }
         }
 
-        // Increment, looping at 6 back to 3
-        if resistance.bands < MAX_BANDS {
-            resistance = Resistance::new(resistance.bands + 1);
-        } else {
-            resistance = Resistance::new(MIN_BANDS);
+        if LEFT.just_pressed() {
+            if pointer > 0 {
+                pointer -= 1;
+            }
+        }
+        if RIGHT.just_pressed() {
+            if pointer < resistance.bands - 1 {
+                pointer += 1;
+            }
+        }
+        if UP.just_pressed() {
+            resistance.index_mut(pointer).change_by(1);
+        }
+        if DOWN.just_pressed() {
+            resistance.index_mut(pointer).change_by(-1);
         }
 
-        // Prevent invalid index call
-        if pointer > resistance.bands - 1 {
-            pointer = resistance.bands - 1;
+        resistance.index(pointer).display_rgb();
+    } else {
+        if A.just_pressed() {
+            resistance.index_mut(pointer).change_to(menu_pointer as i8);
+            show_menu = false;
         }
-    }
+        if B.just_pressed() {
+            show_menu = false;
+        }
 
-    if LEFT.just_pressed() {
-        if pointer > 0 {
-            pointer -= 1;
+        if LEFT.just_pressed() {
+            if menu_pointer > 0 {
+                menu_pointer -= 1;
+            }
         }
-    }
-    if RIGHT.just_pressed() {
-        if pointer < resistance.bands - 1 {
-            pointer += 1;
+        if RIGHT.just_pressed() {
+            if menu_pointer < (current_rgb.len() - 1) as u8 {
+                menu_pointer += 1;
+            } else {
+                menu_pointer = (current_rgb.len() - 1) as u8
+            }
         }
-    }
-    if UP.just_pressed() {
-        resistance.index_mut(pointer).change_by(1);
-    }
-    if DOWN.just_pressed() {
-        resistance.index_mut(pointer).change_by(-1);
+        if UP.just_pressed() {
+            if menu_pointer > 2 {
+                // If pointing to central bottom place, cursor will go directly up
+                if menu_pointer == (current_rgb.len() - 1) as u8 && current_rgb.len() % 3 != 0 {
+                    menu_pointer -= 2;
+                } else {
+                    menu_pointer -= 3;
+                }
+            }
+        }
+        if DOWN.just_pressed() {
+            if menu_pointer < (current_rgb.len() - 1 - 3) as u8 {
+                menu_pointer += 3;
+            } else {
+                menu_pointer = (current_rgb.len() - 1) as u8
+            }
+        }
+
+        write_led(&current_rgb[menu_pointer as usize])
     }
 
     arduboy.set_cursor(0, 0);
@@ -616,7 +741,9 @@ pub unsafe extern "C" fn loop_() {
         Color::White,
     );
 
-    resistance.index(pointer).display_rgb();
+    if show_menu {
+        draw_menu(&resistance.index(pointer).vtype, menu_pointer);
+    }
 
     arduboy.display();
 }
