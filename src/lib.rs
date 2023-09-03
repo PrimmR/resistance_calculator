@@ -14,6 +14,7 @@ const CHAR_HEIGHT: i16 = 8;
 
 const MAX_BANDS: u8 = 6;
 const MIN_BANDS: u8 = 3;
+const DEFAULT_BANDS: u8 = 4;
 
 const fn round_down_to(unrounded: i16, multiple: i16) -> i16 {
     if unrounded >= 0 {
@@ -376,6 +377,20 @@ fn draw_menu(band_type: &ValType, menu_index: u8) {
     )
 }
 
+fn init_eeprom(eep: &EEPROMBYTECHECKLESS) -> u8 {
+    eep.init();
+    let saved_data = eep.read();
+    if let MIN_BANDS..=MAX_BANDS = saved_data {
+        saved_data
+    } else {
+        DEFAULT_BANDS
+    }
+}
+
+fn save_eeprom(eep: &EEPROMBYTECHECKLESS, bands: u8) {
+    eep.update(bands);
+}
+
 // Colours & orders
 
 const PINK: RGB = RGB(255, 32, 128, Patterns::Vibrant as u8, 0);
@@ -549,6 +564,8 @@ const BAND_Y: i16 = RES_Y;
 const BAND_Xs: [i16; 6] = [32, 44, 56, 69, 82, 94];
 const BAND_WIDTH: i16 = 6;
 
+const EEPROM_ADDR:i16 = 416;
+
 enum Patterns {
     Black,
     White,
@@ -600,14 +617,18 @@ static Band: [u8; 314] = [
 //Initialize variables used in this game
 static mut pointer: u8 = 0;
 static mut menu_pointer: u8 = 0;
-static mut resistance: Resistance = Resistance::new(6);
+static mut resistance: Resistance = Resistance::new(DEFAULT_BANDS);
 static mut show_menu: bool = false;
+
+// Setup eeprom memory
+static mut eeprom: EEPROMBYTECHECKLESS = EEPROMBYTECHECKLESS::new(EEPROM_ADDR - 16);
 
 //The setup() function runs once when you turn your Arduboy on
 #[no_mangle]
 pub unsafe extern "C" fn setup() {
     // put your setup code here, to run once:
     arduboy.begin();
+    resistance = Resistance::new(init_eeprom(&eeprom));
     arduboy.clear();
     arduboy.set_frame_rate(30);
 }
@@ -632,21 +653,25 @@ pub unsafe extern "C" fn loop_() {
             show_menu = true;
         }
         if B.just_pressed() {
-            // Stick the pointer to currently selected band
-            if resistance.bands == 4 && pointer > 1 {
-                pointer += 1;
-            }
-
-            // Increment, looping at 6 back to 3
-            if resistance.bands < MAX_BANDS {
-                resistance = Resistance::new(resistance.bands + 1);
+            if LEFT.pressed() && RIGHT.pressed() { // Save default bands button combo
+                save_eeprom(&eeprom, resistance.bands)
             } else {
-                resistance = Resistance::new(MIN_BANDS);
-            }
+                // Stick the pointer to currently selected band
+                if resistance.bands == 4 && pointer > 1 {
+                    pointer += 1;
+                }
 
-            // Prevent invalid index call
-            if pointer > resistance.bands - 1 {
-                pointer = resistance.bands - 1;
+                // Increment, looping at 6 back to 3
+                if resistance.bands < MAX_BANDS {
+                    resistance = Resistance::new(resistance.bands + 1);
+                } else {
+                    resistance = Resistance::new(MIN_BANDS);
+                }
+
+                // Prevent invalid index call
+                if pointer > resistance.bands - 1 {
+                    pointer = resistance.bands - 1;
+                }
             }
         }
 
