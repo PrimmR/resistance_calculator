@@ -620,6 +620,9 @@ static mut menu_pointer: u8 = 0;
 static mut resistance: Resistance = Resistance::new(DEFAULT_BANDS);
 static mut show_menu: bool = false;
 
+const EEPROM_CONFIRM_TIME: u16 = 30;
+static mut eeprom_confirm_timer: u16 = 0;
+
 // Setup eeprom memory
 static mut eeprom: EEPROMBYTECHECKLESS = EEPROMBYTECHECKLESS::new(EEPROM_ADDR - 16);
 
@@ -643,6 +646,9 @@ pub unsafe extern "C" fn loop_() {
     }
 
     arduboy.clear();
+
+// CONTROLS
+
     arduboy.poll_buttons();
 
     let current_rgb = Band::rgb_arr_from_valtype(&resistance.index(pointer).vtype);
@@ -654,7 +660,8 @@ pub unsafe extern "C" fn loop_() {
         }
         if B.just_pressed() {
             if LEFT.pressed() && RIGHT.pressed() { // Save default bands button combo
-                save_eeprom(&eeprom, resistance.bands)
+                save_eeprom(&eeprom, resistance.bands);
+                eeprom_confirm_timer = EEPROM_CONFIRM_TIME;
             } else {
                 // Stick the pointer to currently selected band
                 if resistance.bands == 4 && pointer > 1 {
@@ -735,6 +742,12 @@ pub unsafe extern "C" fn loop_() {
         write_led(&current_rgb[menu_pointer as usize])
     }
 
+    if eeprom_confirm_timer >0 {
+        eeprom_confirm_timer -= 1;
+        arduboy.set_rgb_led(96, 255, 16)
+    }
+
+    // DISPLAY
     arduboy.set_cursor(0, 0);
 
     arduboy.draw_fast_vline(
