@@ -431,18 +431,7 @@ const TCRs: [&str; 9] = [
 
 const PREFIXES: [&str; 5] = ["m\0", " \0", "k\0", "M\0", "G\0"];
 
-// Sprites
-#[link_section = ".progmem.data"]
-static Ohm: [u8; 7] = [
-    5, 7, // width, height,
-    0x5e, 0x71, 0x01, 0x71, 0x5e,
-];
 
-#[link_section = ".progmem.data"]
-static Plus_Minus: [u8; 7] = [
-    5, 7, // width, height,
-    0x44, 0x44, 0x5f, 0x44, 0x44,
-];
 
 const VALUES3_WIDTH: i16 = 7 * CHAR_WIDTH;
 const VALUES2_WIDTH: i16 = 6 * CHAR_WIDTH;
@@ -459,7 +448,28 @@ const RES_HEIGHT: u8 = 32;
 const MENU_SIZE: u8 = 56;
 const MENU_GAP: i16 = 6;
 
+const ABBR_WIDTH: u8 = 7;
+const ABBR_HEIGHT: u8 = 5;
+
+const BAND_Y: i16 = RES_Y;
+const BAND_Xs: [i16; 6] = [32, 44, 56, 69, 82, 94];
+const BAND_WIDTH: i16 = 6;
+
+const EEPROM_ADDR:i16 = 416;
+
+// Sprites
+progmem!(
+static Ohm: [u8;_] = [
+    5, 7, // width, height,
+    0x5e, 0x71, 0x01, 0x71, 0x5e,
+];
+
 #[link_section = ".progmem.data"]
+static Plus_Minus: [u8; 7] = [
+    5, 7, // width, height,
+    0x44, 0x44, 0x5f, 0x44, 0x44,
+];
+
 static Res: [u8; 514] = [
     128, 32, // width, height,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -496,7 +506,6 @@ static Res: [u8; 514] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
-#[link_section = ".progmem.data"]
 static ResMask: [u8; 512] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f, 0x3f, 0x1f, 0x0f, 0x0f, 0x07, 0x07,
@@ -532,10 +541,6 @@ static ResMask: [u8; 512] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 ];
 
-const ABBR_WIDTH: u8 = 7;
-const ABBR_HEIGHT: u8 = 5;
-
-#[link_section = ".progmem.data"]
 static Abbreviations: [u8; 93] = [
     7, 5, // width, height,
     // PINK
@@ -554,17 +559,12 @@ static Abbreviations: [u8; 93] = [
     0x1f, 0x08, 0x1f, 0x00, 0x1f, 0x04, 0x1f,
 ];
 
-#[link_section = ".progmem.data"]
 static Arrow: [u8; 5] = [
     3, 5, // width, height,
     0x1f, 0x0e, 0x04,
 ];
+);
 
-const BAND_Y: i16 = RES_Y;
-const BAND_Xs: [i16; 6] = [32, 44, 56, 69, 82, 94];
-const BAND_WIDTH: i16 = 6;
-
-const EEPROM_ADDR:i16 = 416;
 
 enum Patterns {
     Black,
