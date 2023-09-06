@@ -710,16 +710,14 @@ pub unsafe extern "C" fn loop_() {
             show_menu = false;
         }
 
-        if LEFT.just_pressed() {
+        if LEFT.just_pressed() && menu_pointer % 3 != 0 {
             if menu_pointer > 0 {
                 menu_pointer -= 1;
             }
         }
         if RIGHT.just_pressed() {
-            if menu_pointer < (current_rgb.len() - 1) as u8 {
+            if menu_pointer < (current_rgb.len() - 1) as u8 && menu_pointer % 3 != 2 {
                 menu_pointer += 1;
-            } else {
-                menu_pointer = (current_rgb.len() - 1) as u8
             }
         }
         if UP.just_pressed() {
@@ -733,9 +731,9 @@ pub unsafe extern "C" fn loop_() {
             }
         }
         if DOWN.just_pressed() {
-            if menu_pointer < (current_rgb.len() - 1 - 3) as u8 {
+            if menu_pointer < (current_rgb.len() - 3) as u8 {
                 menu_pointer += 3;
-            } else {
+            } else if current_rgb.len() %3 != 0 {
                 menu_pointer = (current_rgb.len() - 1) as u8
             }
         }
