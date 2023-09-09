@@ -6,7 +6,6 @@ It was created as a test for writing for the device in Rust using the [Rust for 
 The program makes heavy use of the Arduboy's RGB LED, so running it on a device with one is advised, but the program is still useable without.
 
 ## Controls
-
 **L + R** - Select band
 
 **U + D** - Change value by one place
@@ -20,3 +19,6 @@ The program makes heavy use of the Arduboy's RGB LED, so running it on a device 
 **B (in menu)** - Close menu
 
 **Hold L and R, Press B** - Save current number of bands in EEPROM to be loaded on startup
+
+## Build
+To build this, you will need my [fork](https://github.com/PrimmR/Rust-for-Arduboy) of the Rust for Arduboy library. Then place this repository inside Project/game and execute one of the run scripts.
